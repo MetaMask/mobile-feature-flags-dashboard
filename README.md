@@ -38,3 +38,13 @@ When a threshold flag becomes fully rolled out, the dashboard records the first 
 ```
 
 Timestamps are preserved across refreshes so rollout duration can be tracked over time.
+
+## Deploy on Vercel
+
+This app is configured for Vercel. Import the GitHub repository or deploy with the Vercel CLI:
+
+```bash
+npx vercel login
+npx vercel link --yes --project mobile-feature-flags-dashboard
+npx vercel deploy --prod --yes
+```
