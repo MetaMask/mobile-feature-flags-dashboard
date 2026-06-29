@@ -7,6 +7,7 @@ import type {
   FlagByName,
   FlagClient,
   FlagEnvironment,
+  FlagGroup,
   FlagVariant,
 } from '@/lib/types';
 
@@ -23,10 +24,46 @@ type DashboardProps = {
 
 type ActiveTab =
   | 'all'
+  | 'boolean'
   | 'threshold'
   | 'config'
+  | 'other'
   | 'rolled-out'
   | 'mismatches';
+
+const FLAG_GROUP_STYLES: Record<
+  FlagGroup,
+  { badge: string; cell: string }
+> = {
+  boolean: {
+    badge: 'bg-blue-100 text-blue-800',
+    cell: 'border-blue-200 bg-blue-50/50',
+  },
+  threshold: {
+    badge: 'bg-violet-100 text-violet-800',
+    cell: 'border-violet-200 bg-violet-50/50',
+  },
+  config: {
+    badge: 'bg-slate-100 text-slate-700',
+    cell: 'border-slate-200 bg-white',
+  },
+  other: {
+    badge: 'bg-amber-100 text-amber-800',
+    cell: 'border-amber-200 bg-amber-50/50',
+  },
+};
+
+function getGroupBadgeClass(group: FlagByName['group'] | FlagGroup): string {
+  if (group === 'mixed') {
+    return 'bg-orange-100 text-orange-800';
+  }
+
+  return FLAG_GROUP_STYLES[group].badge;
+}
+
+function getGroupCellClass(group: FlagGroup): string {
+  return FLAG_GROUP_STYLES[group].cell;
+}
 
 function formatJson(value: unknown): string {
   return JSON.stringify(value, null, 2);
@@ -85,20 +122,12 @@ function VariantCell({ variant }: { variant: FlagVariant }) {
 
   return (
     <div
-      className={`rounded-lg border px-3 py-3 ${
-        variant.group === 'threshold'
-          ? 'border-violet-200 bg-violet-50/50'
-          : 'border-slate-200 bg-white'
-      }`}
+      className={`rounded-lg border px-3 py-3 ${getGroupCellClass(variant.group)}`}
     >
       <div className="flex items-start justify-between gap-2">
         <div>
           <span
-            className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${
-              variant.group === 'threshold'
-                ? 'bg-violet-100 text-violet-800'
-                : 'bg-slate-100 text-slate-700'
-            }`}
+            className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${getGroupBadgeClass(variant.group)}`}
           >
             {variant.group}
           </span>
@@ -132,13 +161,7 @@ function FlagMatrixCard({ flag }: { flag: FlagByName }) {
             </h3>
             <div className="flex flex-wrap items-center gap-2">
               <span
-                className={`rounded-full px-2.5 py-1 text-xs font-medium ${
-                  flag.group === 'threshold'
-                    ? 'bg-violet-100 text-violet-800'
-                    : flag.group === 'config'
-                      ? 'bg-slate-100 text-slate-700'
-                      : 'bg-orange-100 text-orange-800'
-                }`}
+                className={`rounded-full px-2.5 py-1 text-xs font-medium ${getGroupBadgeClass(flag.group)}`}
               >
                 {flag.group}
               </span>
@@ -230,12 +253,20 @@ export function Dashboard({
         return false;
       }
 
+      if (activeTab === 'boolean') {
+        return flag.groups.includes('boolean');
+      }
+
       if (activeTab === 'threshold') {
-        return flag.group === 'threshold' || flag.group === 'mixed';
+        return flag.groups.includes('threshold');
       }
 
       if (activeTab === 'config') {
-        return flag.group === 'config' || flag.group === 'mixed';
+        return flag.groups.includes('config');
+      }
+
+      if (activeTab === 'other') {
+        return flag.groups.includes('other');
       }
 
       if (activeTab === 'rolled-out') {
@@ -254,17 +285,15 @@ export function Dashboard({
     flag.variants.some((variant) => variant.isFullyRolledOut),
   ).length;
   const mismatchCount = flags.filter((flag) => flag.hasValueMismatch).length;
-  const thresholdCount = flags.filter(
-    (flag) => flag.group === 'threshold' || flag.group === 'mixed',
-  ).length;
-  const configCount = flags.filter(
-    (flag) => flag.group === 'config' || flag.group === 'mixed',
-  ).length;
+  const countByGroup = (group: FlagGroup) =>
+    flags.filter((flag) => flag.groups.includes(group)).length;
 
   const tabs: { id: ActiveTab; label: string; count: number }[] = [
     { id: 'all', label: 'All flags', count: flags.length },
-    { id: 'threshold', label: 'Threshold', count: thresholdCount },
-    { id: 'config', label: 'Config', count: configCount },
+    { id: 'boolean', label: 'Boolean', count: countByGroup('boolean') },
+    { id: 'threshold', label: 'Threshold', count: countByGroup('threshold') },
+    { id: 'config', label: 'Config', count: countByGroup('config') },
+    { id: 'other', label: 'Other', count: countByGroup('other') },
     { id: 'rolled-out', label: 'Fully rolled out', count: fullyRolledOutCount },
     { id: 'mismatches', label: 'Mismatches', count: mismatchCount },
   ];

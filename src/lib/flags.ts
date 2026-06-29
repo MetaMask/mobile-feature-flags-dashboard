@@ -89,8 +89,23 @@ export function parseFlagsResponse(
   }, {});
 }
 
+export const FLAG_GROUPS: FlagGroup[] = [
+  'boolean',
+  'threshold',
+  'config',
+  'other',
+];
+
 export function isThresholdFlag(value: FlagValue): boolean {
   return Array.isArray(value);
+}
+
+export function isBooleanFlag(value: FlagValue): boolean {
+  return typeof value === 'boolean';
+}
+
+export function isConfigFlag(value: FlagValue): boolean {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
 export function isThresholdVariant(value: unknown): value is ThresholdVariant {
@@ -112,7 +127,19 @@ export function isFullyRolledOutThresholdFlag(value: FlagValue): boolean {
 }
 
 export function getFlagGroup(value: FlagValue): FlagGroup {
-  return isThresholdFlag(value) ? 'threshold' : 'config';
+  if (isBooleanFlag(value)) {
+    return 'boolean';
+  }
+
+  if (isThresholdFlag(value)) {
+    return 'threshold';
+  }
+
+  if (isConfigFlag(value)) {
+    return 'config';
+  }
+
+  return 'other';
 }
 
 export function stableStringify(value: unknown): string {
@@ -179,7 +206,7 @@ export function buildFlagVariant(
 ): FlagVariant {
   const contextKey = getContextKey(context.client, context.environment);
   const present = value !== undefined;
-  const group = present ? getFlagGroup(value) : 'config';
+  const group = present ? getFlagGroup(value) : 'other';
   const isFullyRolledOut =
     present && group === 'threshold' && isFullyRolledOutThresholdFlag(value);
   const rolledOutSince = isFullyRolledOut
@@ -231,12 +258,14 @@ export function groupFlagsByName(
       );
 
       const presentVariants = variants.filter((variant) => variant.present);
-      const groups = new Set(presentVariants.map((variant) => variant.group));
+      const groups = [
+        ...new Set(presentVariants.map((variant) => variant.group)),
+      ].sort();
       const group: FlagByName['group'] =
-        groups.size === 0
-          ? 'config'
-          : groups.size === 1
-            ? [...groups][0]
+        groups.length === 0
+          ? 'other'
+          : groups.length === 1
+            ? groups[0]
             : 'mixed';
 
       const mismatchClients = getClientValueMismatchClients(variants);
@@ -246,6 +275,7 @@ export function groupFlagsByName(
         name,
         variants,
         group,
+        groups,
         hasValueMismatch,
         mismatchClients,
         presentIn: presentVariants.length,

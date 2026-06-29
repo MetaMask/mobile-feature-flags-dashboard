@@ -23,7 +23,7 @@ export type FlagContext = {
 
 export type ContextKey = `${FlagClient}/${FlagEnvironment}`;
 
-export type FlagGroup = 'threshold' | 'config';
+export type FlagGroup = 'boolean' | 'threshold' | 'config' | 'other';
 
 export type FlagVariant = {
   context: FlagContext;
@@ -40,7 +40,10 @@ export type FlagVariant = {
 export type FlagByName = {
   name: string;
   variants: FlagVariant[];
+  /** Primary type when consistent, otherwise mixed */
   group: FlagGroup | 'mixed';
+  /** All types present across contexts */
+  groups: FlagGroup[];
   /** True when any client has differing values across its environments */
   hasValueMismatch: boolean;
   /** Clients whose values differ across environments (e.g. mobile dev vs prod) */
