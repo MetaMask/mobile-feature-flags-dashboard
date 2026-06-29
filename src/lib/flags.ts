@@ -130,6 +130,46 @@ export function valuesAreEqual(
   return stableStringify(left) === stableStringify(right);
 }
 
+export function getClientValueMismatchClients(
+  variants: FlagVariant[],
+  clients: FlagClient[] = FLAG_CLIENTS,
+): FlagClient[] {
+  return clients.filter((client) =>
+    clientHasValueMismatchAcrossEnvironments(variants, client),
+  );
+}
+
+export function clientHasValueMismatchAcrossEnvironments(
+  variants: FlagVariant[],
+  client: FlagClient,
+): boolean {
+  const clientVariants = variants.filter(
+    (variant) => variant.context.client === client,
+  );
+
+  if (clientVariants.length <= 1) {
+    return false;
+  }
+
+  const presentVariants = clientVariants.filter((variant) => variant.present);
+
+  if (presentVariants.length === 0) {
+    return false;
+  }
+
+  if (presentVariants.length < clientVariants.length) {
+    return true;
+  }
+
+  const [firstValue, ...remainingValues] = presentVariants.map(
+    (variant) => variant.value,
+  );
+
+  return remainingValues.some(
+    (value) => !valuesAreEqual(firstValue, value),
+  );
+}
+
 export function buildFlagVariant(
   context: FlagContext,
   flagName: string,
@@ -199,23 +239,15 @@ export function groupFlagsByName(
             ? [...groups][0]
             : 'mixed';
 
-      const presentValues = presentVariants.map((variant) => variant.value);
-      const hasAbsentContexts =
-        presentVariants.length > 0 &&
-        presentVariants.length < variants.length;
-      const hasValueMismatch =
-        hasAbsentContexts ||
-        (presentValues.length > 1 &&
-          presentValues.some(
-            (value, index) =>
-              index > 0 && !valuesAreEqual(presentValues[0], value),
-          ));
+      const mismatchClients = getClientValueMismatchClients(variants);
+      const hasValueMismatch = mismatchClients.length > 0;
 
       return {
         name,
         variants,
         group,
         hasValueMismatch,
+        mismatchClients,
         presentIn: presentVariants.length,
         totalContexts: variants.length,
       };

@@ -147,7 +147,7 @@ function FlagMatrixCard({ flag }: { flag: FlagByName }) {
               </span>
               {flag.hasValueMismatch ? (
                 <span className="rounded-full bg-sky-100 px-2.5 py-1 text-xs font-semibold text-sky-900">
-                  Values differ
+                  Values differ ({flag.mismatchClients.join(', ')})
                 </span>
               ) : null}
             </div>
@@ -282,8 +282,9 @@ export function Dashboard({
             </h1>
             <p className="max-w-3xl text-sm leading-6 text-slate-600">
               Compare feature flags across clients and environments for the main
-              distribution. Flags are grouped by name so you can see how each
-              value differs between mobile/extension and dev/prod/test.
+              distribution. Flags are grouped by name. &ldquo;Values differ&rdquo;
+              appears only when a client&apos;s values differ across its
+              environments (e.g. mobile dev vs mobile prod).
             </p>
           </div>
           <button

@@ -41,7 +41,10 @@ export type FlagByName = {
   name: string;
   variants: FlagVariant[];
   group: FlagGroup | 'mixed';
+  /** True when any client has differing values across its environments */
   hasValueMismatch: boolean;
+  /** Clients whose values differ across environments (e.g. mobile dev vs prod) */
+  mismatchClients: FlagClient[];
   presentIn: number;
   totalContexts: number;
 };
