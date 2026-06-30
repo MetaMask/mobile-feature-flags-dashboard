@@ -1,86 +1,96 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { Dashboard } from '@/components/Dashboard';
 import {
-  buildFlagsUrl,
-  DEFAULT_FLAGS_PARAMS,
-  groupFlags,
-  isFullyRolledOutThresholdFlag,
-  mergeFullyRolledOutTimestamps,
+  FLAG_CLIENTS,
+  FLAG_ENVIRONMENTS,
+  groupFlagsByName,
 } from '@/lib/flags';
-import {
-  readFullyRolledOutStorage,
-  writeFullyRolledOutStorage,
-} from '@/lib/fullyRolledOutStorage';
-import type { FlagValue, GroupedFlag } from '@/lib/types';
+import type {
+  FlagByName,
+  FlagClient,
+  FlagEnvironment,
+  FlagsMatrixResponse,
+} from '@/lib/types';
 
-type FlagsApiResponse = {
-  flags: Record<string, FlagValue>;
-  fetchedAt: string;
-  source: string;
-  error?: string;
-};
+function buildFlagsApiUrl(
+  clients: FlagClient[],
+  environments: FlagEnvironment[],
+): string {
+  const params = new URLSearchParams({
+    clients: clients.join(','),
+    environments: environments.join(','),
+  });
+
+  return `/api/flags?${params.toString()}`;
+}
 
 export function FeatureFlagsDashboard() {
-  const [flags, setFlags] = useState<GroupedFlag[]>([]);
+  const [flags, setFlags] = useState<FlagByName[]>([]);
   const [fetchedAt, setFetchedAt] = useState<string | null>(null);
+  const [rolloutTrackingEnabled, setRolloutTrackingEnabled] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [selectedClients, setSelectedClients] =
+    useState<FlagClient[]>(FLAG_CLIENTS);
+  const [selectedEnvironments, setSelectedEnvironments] =
+    useState<FlagEnvironment[]>(FLAG_ENVIRONMENTS);
 
-  const loadFlags = useCallback(async (isManualRefresh = false) => {
-    if (isManualRefresh) {
-      setIsRefreshing(true);
-    } else {
-      setIsLoading(true);
-    }
-
-    setError(null);
-
-    try {
-      const response = await fetch('/api/flags');
-      const payload = (await response.json()) as FlagsApiResponse;
-
-      if (!response.ok) {
-        throw new Error(payload.error ?? 'Failed to load feature flags');
+  const loadFlags = useCallback(
+    async (isManualRefresh = false) => {
+      if (isManualRefresh) {
+        setIsRefreshing(true);
+      } else {
+        setIsLoading(true);
       }
 
-      const currentlyFullyRolledOut = Object.entries(payload.flags)
-        .filter(([, value]) => isFullyRolledOutThresholdFlag(value))
-        .map(([name]) => name);
+      setError(null);
 
-      const existingStorage = readFullyRolledOutStorage();
-      const updatedStorage = mergeFullyRolledOutTimestamps(
-        existingStorage,
-        currentlyFullyRolledOut,
-      );
-      writeFullyRolledOutStorage(updatedStorage);
+      try {
+        const response = await fetch(
+          buildFlagsApiUrl(selectedClients, selectedEnvironments),
+        );
+        const payload = (await response.json()) as FlagsMatrixResponse;
 
-      setFlags(groupFlags(payload.flags, updatedStorage));
-      setFetchedAt(payload.fetchedAt);
-    } catch (loadError) {
-      const message =
-        loadError instanceof Error
-          ? loadError.message
-          : 'Failed to load feature flags';
-      setError(message);
-    } finally {
-      setIsLoading(false);
-      setIsRefreshing(false);
-    }
-  }, []);
+        if (!response.ok) {
+          throw new Error(payload.error ?? 'Failed to load feature flags');
+        }
+
+        setFlags(groupFlagsByName(payload.contexts, payload.fullyRolledOut));
+        setFetchedAt(payload.fetchedAt);
+        setRolloutTrackingEnabled(payload.rolloutTrackingEnabled);
+      } catch (loadError) {
+        const message =
+          loadError instanceof Error
+            ? loadError.message
+            : 'Failed to load feature flags';
+        setFlags([]);
+        setError(message);
+      } finally {
+        setIsLoading(false);
+        setIsRefreshing(false);
+      }
+    },
+    [selectedClients, selectedEnvironments],
+  );
 
   useEffect(() => {
     void loadFlags();
   }, [loadFlags]);
 
+  const contextCount = useMemo(
+    () => selectedClients.length * selectedEnvironments.length,
+    [selectedClients, selectedEnvironments],
+  );
+
   if (isLoading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-slate-100">
         <p className="text-sm font-medium text-slate-600">
-          Loading feature flags…
+          Loading feature flags across {contextCount} contexts…
         </p>
       </div>
     );
@@ -111,7 +121,11 @@ export function FeatureFlagsDashboard() {
       <Dashboard
         flags={flags}
         fetchedAt={fetchedAt}
-        sourceUrl={buildFlagsUrl(DEFAULT_FLAGS_PARAMS)}
+        rolloutTrackingEnabled={rolloutTrackingEnabled}
+        selectedClients={selectedClients}
+        selectedEnvironments={selectedEnvironments}
+        onClientsChange={setSelectedClients}
+        onEnvironmentsChange={setSelectedEnvironments}
         onRefresh={() => void loadFlags(true)}
         isRefreshing={isRefreshing}
       />

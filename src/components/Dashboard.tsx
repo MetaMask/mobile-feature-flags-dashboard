@@ -2,192 +2,320 @@
 
 import { useMemo, useState } from 'react';
 
-import { formatDuration } from '@/lib/flags';
-import type { GroupedFlag } from '@/lib/types';
+import { formatContextLabel, formatDuration } from '@/lib/flags';
+import type {
+  FlagByName,
+  FlagClient,
+  FlagEnvironment,
+  FlagGroup,
+  FlagVariant,
+} from '@/lib/types';
 
-type FlagSectionProps = {
-  title: string;
-  description: string;
-  flags: GroupedFlag[];
-  emptyMessage: string;
-  showRolloutIndicators?: boolean;
+type DashboardProps = {
+  flags: FlagByName[];
+  fetchedAt: string | null;
+  rolloutTrackingEnabled: boolean;
+  selectedClients: FlagClient[];
+  selectedEnvironments: FlagEnvironment[];
+  onClientsChange: (clients: FlagClient[]) => void;
+  onEnvironmentsChange: (environments: FlagEnvironment[]) => void;
+  onRefresh: () => void;
+  isRefreshing: boolean;
 };
+
+type ActiveTab =
+  | 'all'
+  | 'boolean'
+  | 'threshold'
+  | 'config'
+  | 'other'
+  | 'rolled-out'
+  | 'mismatches';
+
+const FLAG_GROUP_STYLES: Record<
+  FlagGroup,
+  { badge: string; cell: string }
+> = {
+  boolean: {
+    badge: 'bg-blue-100 text-blue-800',
+    cell: 'border-blue-200 bg-blue-50/50',
+  },
+  threshold: {
+    badge: 'bg-violet-100 text-violet-800',
+    cell: 'border-violet-200 bg-violet-50/50',
+  },
+  config: {
+    badge: 'bg-slate-100 text-slate-700',
+    cell: 'border-slate-200 bg-white',
+  },
+  other: {
+    badge: 'bg-amber-100 text-amber-800',
+    cell: 'border-amber-200 bg-amber-50/50',
+  },
+};
+
+function getGroupBadgeClass(group: FlagByName['group'] | FlagGroup): string {
+  if (group === 'mixed') {
+    return 'bg-orange-100 text-orange-800';
+  }
+
+  return FLAG_GROUP_STYLES[group].badge;
+}
+
+function getGroupCellClass(group: FlagGroup): string {
+  return FLAG_GROUP_STYLES[group].cell;
+}
 
 function formatJson(value: unknown): string {
   return JSON.stringify(value, null, 2);
 }
 
-function RolloutBadges({ flag }: { flag: GroupedFlag }) {
-  if (!flag.isFullyRolledOut || !flag.rolledOutSince) {
+function toggleSelection<T extends string>(
+  current: T[],
+  value: T,
+  onChange: (next: T[]) => void,
+) {
+  if (current.includes(value)) {
+    const next = current.filter((item) => item !== value);
+    if (next.length > 0) {
+      onChange(next);
+    }
+    return;
+  }
+
+  onChange([...current, value]);
+}
+
+function RolloutBadges({ variant }: { variant: FlagVariant }) {
+  if (!variant.isFullyRolledOut || !variant.rolledOutSince) {
     return null;
   }
 
   return (
-    <div className="flex flex-wrap items-center gap-2">
-      <span className="rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-medium text-emerald-800">
+    <div className="mt-2 flex flex-wrap items-center gap-2">
+      <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-medium text-emerald-800">
         Fully rolled out
       </span>
-      <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-700">
-        {flag.daysFullyRolledOut !== null
-          ? formatDuration(flag.daysFullyRolledOut)
+      <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-700">
+        {variant.daysFullyRolledOut !== null
+          ? formatDuration(variant.daysFullyRolledOut)
           : '—'}
       </span>
-      {flag.isOver180Days ? (
-        <span className="rounded-full bg-amber-100 px-2.5 py-1 text-xs font-semibold text-amber-900">
-          180+ days — consider cleanup
+      {variant.isOver180Days ? (
+        <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-900">
+          180+ days
         </span>
       ) : null}
     </div>
   );
 }
 
-function FlagCard({
-  flag,
-  showRolloutIndicators = false,
-}: {
-  flag: GroupedFlag;
-  showRolloutIndicators?: boolean;
-}) {
+function VariantCell({ variant }: { variant: FlagVariant }) {
   const [expanded, setExpanded] = useState(false);
 
+  if (!variant.present) {
+    return (
+      <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50 px-3 py-4 text-xs text-slate-400">
+        Not present
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className={`rounded-lg border px-3 py-3 ${getGroupCellClass(variant.group)}`}
+    >
+      <div className="flex items-start justify-between gap-2">
+        <div>
+          <span
+            className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${getGroupBadgeClass(variant.group)}`}
+          >
+            {variant.group}
+          </span>
+          <RolloutBadges variant={variant} />
+        </div>
+        <button
+          type="button"
+          onClick={() => setExpanded((current) => !current)}
+          className="shrink-0 rounded border border-slate-200 px-2 py-1 text-[11px] font-medium text-slate-700 hover:bg-slate-50"
+        >
+          {expanded ? 'Hide' : 'Show'}
+        </button>
+      </div>
+      {expanded ? (
+        <pre className="mt-3 max-h-48 overflow-auto rounded bg-slate-950 p-2 text-[11px] leading-relaxed text-slate-100">
+          {formatJson(variant.value)}
+        </pre>
+      ) : null}
+    </div>
+  );
+}
+
+function FlagMatrixCard({ flag }: { flag: FlagByName }) {
   return (
     <article className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
       <div className="flex flex-col gap-3">
         <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="min-w-0 flex-1">
+          <div className="min-w-0 flex-1 space-y-2">
             <h3 className="break-all font-mono text-sm font-semibold text-slate-900">
               {flag.name}
             </h3>
-            {showRolloutIndicators ? <RolloutBadges flag={flag} /> : null}
+            <div className="flex flex-wrap items-center gap-2">
+              <span
+                className={`rounded-full px-2.5 py-1 text-xs font-medium ${getGroupBadgeClass(flag.group)}`}
+              >
+                {flag.group}
+              </span>
+              <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-700">
+                {flag.presentIn}/{flag.totalContexts} contexts
+              </span>
+              {flag.hasValueMismatch ? (
+                <span className="rounded-full bg-sky-100 px-2.5 py-1 text-xs font-semibold text-sky-900">
+                  Values differ ({flag.mismatchClients.join(', ')})
+                </span>
+              ) : null}
+            </div>
           </div>
-          <button
-            type="button"
-            onClick={() => setExpanded((current) => !current)}
-            className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-700 transition hover:bg-slate-50"
-          >
-            {expanded ? 'Hide value' : 'Show value'}
-          </button>
         </div>
-        {expanded ? (
-          <pre className="max-h-80 overflow-auto rounded-lg bg-slate-950 p-3 text-xs leading-relaxed text-slate-100">
-            {formatJson(flag.value)}
-          </pre>
-        ) : null}
+
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          {flag.variants.map((variant) => (
+            <div key={variant.contextKey} className="space-y-2">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                {formatContextLabel(variant.contextKey)}
+              </p>
+              <VariantCell variant={variant} />
+            </div>
+          ))}
+        </div>
       </div>
     </article>
   );
 }
 
-function FlagSection({
-  title,
-  description,
-  flags,
-  emptyMessage,
-  showRolloutIndicators = false,
-}: FlagSectionProps) {
+function FilterGroup<T extends string>({
+  label,
+  options,
+  selected,
+  onChange,
+}: {
+  label: string;
+  options: readonly T[];
+  selected: T[];
+  onChange: (next: T[]) => void;
+}) {
   return (
-    <section className="space-y-4">
-      <div>
-        <h2 className="text-xl font-semibold text-slate-900">{title}</h2>
-        <p className="mt-1 text-sm text-slate-600">{description}</p>
-        <p className="mt-2 text-sm font-medium text-slate-500">
-          {flags.length} flag{flags.length === 1 ? '' : 's'}
-        </p>
+    <fieldset className="space-y-2">
+      <legend className="text-sm font-medium text-slate-700">{label}</legend>
+      <div className="flex flex-wrap gap-2">
+        {options.map((option) => {
+          const isSelected = selected.includes(option);
+
+          return (
+            <button
+              key={option}
+              type="button"
+              onClick={() => toggleSelection(selected, option, onChange)}
+              className={`rounded-full px-3 py-1.5 text-sm font-medium transition ${
+                isSelected
+                  ? 'bg-indigo-600 text-white'
+                  : 'bg-white text-slate-700 ring-1 ring-slate-200 hover:bg-slate-50'
+              }`}
+            >
+              {option}
+            </button>
+          );
+        })}
       </div>
-      {flags.length === 0 ? (
-        <p className="rounded-xl border border-dashed border-slate-300 bg-slate-50 px-4 py-8 text-center text-sm text-slate-500">
-          {emptyMessage}
-        </p>
-      ) : (
-        <div className="grid gap-3">
-          {flags.map((flag) => (
-            <FlagCard
-              key={flag.name}
-              flag={flag}
-              showRolloutIndicators={showRolloutIndicators}
-            />
-          ))}
-        </div>
-      )}
-    </section>
+    </fieldset>
   );
 }
-
-type DashboardProps = {
-  flags: GroupedFlag[];
-  fetchedAt: string | null;
-  sourceUrl: string;
-  onRefresh: () => void;
-  isRefreshing: boolean;
-};
 
 export function Dashboard({
   flags,
   fetchedAt,
-  sourceUrl,
+  rolloutTrackingEnabled,
+  selectedClients,
+  selectedEnvironments,
+  onClientsChange,
+  onEnvironmentsChange,
   onRefresh,
   isRefreshing,
 }: DashboardProps) {
   const [query, setQuery] = useState('');
-  const [activeTab, setActiveTab] = useState<'threshold' | 'config' | 'rolled-out'>(
-    'threshold',
-  );
+  const [activeTab, setActiveTab] = useState<ActiveTab>('all');
+
+  const contextCount = selectedClients.length * selectedEnvironments.length;
 
   const filteredFlags = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
-    if (!normalizedQuery) {
-      return flags;
-    }
 
-    return flags.filter((flag) =>
-      flag.name.toLowerCase().includes(normalizedQuery),
-    );
-  }, [flags, query]);
+    return flags.filter((flag) => {
+      if (normalizedQuery && !flag.name.toLowerCase().includes(normalizedQuery)) {
+        return false;
+      }
 
-  const thresholdFlags = filteredFlags.filter(
-    (flag) => flag.group === 'threshold',
-  );
-  const configFlags = filteredFlags.filter((flag) => flag.group === 'config');
-  const fullyRolledOutFlags = thresholdFlags.filter(
-    (flag) => flag.isFullyRolledOut,
-  );
-  const over180DayFlags = fullyRolledOutFlags.filter(
-    (flag) => flag.isOver180Days,
-  );
+      if (activeTab === 'boolean') {
+        return flag.groups.includes('boolean');
+      }
 
-  const tabs = [
-    {
-      id: 'threshold' as const,
-      label: 'Threshold',
-      count: thresholdFlags.length,
-    },
-    {
-      id: 'config' as const,
-      label: 'Config',
-      count: configFlags.length,
-    },
-    {
-      id: 'rolled-out' as const,
-      label: 'Fully rolled out',
-      count: fullyRolledOutFlags.length,
-    },
+      if (activeTab === 'threshold') {
+        return flag.groups.includes('threshold');
+      }
+
+      if (activeTab === 'config') {
+        return flag.groups.includes('config');
+      }
+
+      if (activeTab === 'other') {
+        return flag.groups.includes('other');
+      }
+
+      if (activeTab === 'rolled-out') {
+        return flag.variants.some((variant) => variant.isFullyRolledOut);
+      }
+
+      if (activeTab === 'mismatches') {
+        return flag.hasValueMismatch;
+      }
+
+      return true;
+    });
+  }, [activeTab, flags, query]);
+
+  const fullyRolledOutCount = flags.filter((flag) =>
+    flag.variants.some((variant) => variant.isFullyRolledOut),
+  ).length;
+  const mismatchCount = flags.filter((flag) => flag.hasValueMismatch).length;
+  const countByGroup = (group: FlagGroup) =>
+    flags.filter((flag) => flag.groups.includes(group)).length;
+
+  const tabs: { id: ActiveTab; label: string; count: number }[] = [
+    { id: 'all', label: 'All flags', count: flags.length },
+    { id: 'boolean', label: 'Boolean', count: countByGroup('boolean') },
+    { id: 'threshold', label: 'Threshold', count: countByGroup('threshold') },
+    { id: 'config', label: 'Config', count: countByGroup('config') },
+    { id: 'other', label: 'Other', count: countByGroup('other') },
+    { id: 'rolled-out', label: 'Fully rolled out', count: fullyRolledOutCount },
+    { id: 'mismatches', label: 'Mismatches', count: mismatchCount },
   ];
 
   return (
-    <div className="mx-auto flex w-full max-w-6xl flex-col gap-8 px-4 py-8 sm:px-6">
+    <div className="mx-auto flex w-full max-w-7xl flex-col gap-8 px-4 py-8 sm:px-6">
       <header className="space-y-4">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div className="space-y-2">
             <p className="text-sm font-medium uppercase tracking-[0.2em] text-indigo-600">
-              MetaMask Mobile
+              MetaMask
             </p>
             <h1 className="text-3xl font-semibold tracking-tight text-slate-900">
               Feature Flags Dashboard
             </h1>
-            <p className="max-w-2xl text-sm leading-6 text-slate-600">
-              Live view of production mobile feature flags. Threshold flags use
-              array rollout configs; config flags are everything else. Fully
-              rolled out threshold flags are tracked in local storage.
+            <p className="max-w-3xl text-sm leading-6 text-slate-600">
+              Compare feature flags across clients and environments for the main
+              distribution. Flags are grouped by name. &ldquo;Values differ&rdquo;
+              appears only when a client&apos;s values differ across its
+              environments (e.g. mobile dev vs mobile prod).
             </p>
           </div>
           <button
@@ -200,62 +328,90 @@ export function Dashboard({
           </button>
         </div>
 
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
           <div className="rounded-xl border border-slate-200 bg-white p-4">
-            <p className="text-sm text-slate-500">Total flags</p>
+            <p className="text-sm text-slate-500">Unique flag names</p>
             <p className="mt-1 text-2xl font-semibold text-slate-900">
               {flags.length}
             </p>
           </div>
           <div className="rounded-xl border border-slate-200 bg-white p-4">
-            <p className="text-sm text-slate-500">Threshold flags</p>
+            <p className="text-sm text-slate-500">Contexts loaded</p>
             <p className="mt-1 text-2xl font-semibold text-slate-900">
-              {flags.filter((flag) => flag.group === 'threshold').length}
+              {contextCount}
+            </p>
+          </div>
+          <div className="rounded-xl border border-slate-200 bg-white p-4">
+            <p className="text-sm text-slate-500">Value mismatches</p>
+            <p className="mt-1 text-2xl font-semibold text-sky-700">
+              {mismatchCount}
             </p>
           </div>
           <div className="rounded-xl border border-slate-200 bg-white p-4">
             <p className="text-sm text-slate-500">Fully rolled out</p>
             <p className="mt-1 text-2xl font-semibold text-emerald-700">
-              {fullyRolledOutFlags.length}
+              {fullyRolledOutCount}
             </p>
           </div>
           <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
             <p className="text-sm text-amber-800">180+ days rolled out</p>
             <p className="mt-1 text-2xl font-semibold text-amber-900">
-              {over180DayFlags.length}
+              {
+                flags.filter((flag) =>
+                  flag.variants.some((variant) => variant.isOver180Days),
+                ).length
+              }
             </p>
           </div>
         </div>
 
-        <div className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-white p-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="text-sm text-slate-600">
-            <p>
-              Source:{' '}
-              <a
-                href={sourceUrl}
-                target="_blank"
-                rel="noreferrer"
-                className="font-medium text-indigo-600 hover:underline"
-              >
-                client-config API
-              </a>
-            </p>
-            {fetchedAt ? (
-              <p className="mt-1">
-                Last fetched: {new Date(fetchedAt).toLocaleString()}
-              </p>
-            ) : null}
-          </div>
-          <label className="flex w-full max-w-md flex-col gap-1 text-sm text-slate-600 sm:items-end">
-            <span>Search flags</span>
-            <input
-              type="search"
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder="Filter by flag name"
-              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 outline-none ring-indigo-500 focus:ring-2"
+        {!rolloutTrackingEnabled ? (
+          <p className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+            Rollout tracking is disabled. Set{' '}
+            <code className="rounded bg-amber-100 px-1 py-0.5">POSTGRES_URL</code>{' '}
+            (Vercel Postgres) to persist fully rolled out timestamps in the
+            database.
+          </p>
+        ) : null}
+
+        <div className="space-y-4 rounded-xl border border-slate-200 bg-white p-4">
+          <div className="grid gap-6 lg:grid-cols-2">
+            <FilterGroup
+              label="Client"
+              options={['mobile', 'extension'] as const}
+              selected={selectedClients}
+              onChange={onClientsChange}
             />
-          </label>
+            <FilterGroup
+              label="Environment"
+              options={['dev', 'prod', 'test'] as const}
+              selected={selectedEnvironments}
+              onChange={onEnvironmentsChange}
+            />
+          </div>
+
+          <div className="flex flex-col gap-3 border-t border-slate-100 pt-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="text-sm text-slate-600">
+              <p>
+                Distribution: <span className="font-medium">main</span>
+              </p>
+              {fetchedAt ? (
+                <p className="mt-1">
+                  Last fetched: {new Date(fetchedAt).toLocaleString()}
+                </p>
+              ) : null}
+            </div>
+            <label className="flex w-full max-w-md flex-col gap-1 text-sm text-slate-600 sm:items-end">
+              <span>Search by flag name</span>
+              <input
+                type="search"
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="Filter flags"
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 outline-none ring-indigo-500 focus:ring-2"
+              />
+            </label>
+          </div>
         </div>
       </header>
 
@@ -276,34 +432,33 @@ export function Dashboard({
         ))}
       </div>
 
-      {activeTab === 'threshold' ? (
-        <FlagSection
-          title="Threshold flags"
-          description="Array-based rollout flags. A flag is fully rolled out when every variant scope value is 1."
-          flags={thresholdFlags}
-          emptyMessage="No threshold flags match your search."
-          showRolloutIndicators
-        />
-      ) : null}
+      <section className="space-y-4">
+        <div>
+          <h2 className="text-xl font-semibold text-slate-900">
+            Flags grouped by name
+          </h2>
+          <p className="mt-1 text-sm text-slate-600">
+            Each card shows one flag name with its values across the selected
+            client and environment combinations.
+          </p>
+          <p className="mt-2 text-sm font-medium text-slate-500">
+            {filteredFlags.length} flag
+            {filteredFlags.length === 1 ? '' : 's'} shown
+          </p>
+        </div>
 
-      {activeTab === 'config' ? (
-        <FlagSection
-          title="Config flags"
-          description="All non-array feature flag values."
-          flags={configFlags}
-          emptyMessage="No config flags match your search."
-        />
-      ) : null}
-
-      {activeTab === 'rolled-out' ? (
-        <FlagSection
-          title="Fully rolled out threshold flags"
-          description="Threshold flags where every array entry has scope.value = 1. Timestamps are stored in local storage under fullyRolledOut."
-          flags={fullyRolledOutFlags}
-          emptyMessage="No fully rolled out threshold flags match your search."
-          showRolloutIndicators
-        />
-      ) : null}
+        {filteredFlags.length === 0 ? (
+          <p className="rounded-xl border border-dashed border-slate-300 bg-slate-50 px-4 py-8 text-center text-sm text-slate-500">
+            No flags match the current filters.
+          </p>
+        ) : (
+          <div className="grid gap-3">
+            {filteredFlags.map((flag) => (
+              <FlagMatrixCard key={flag.name} flag={flag} />
+            ))}
+          </div>
+        )}
+      </section>
     </div>
   );
 }

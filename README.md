@@ -1,13 +1,14 @@
-# MetaMask Mobile Feature Flags Dashboard
+# MetaMask Feature Flags Dashboard
 
-A Next.js dashboard for viewing MetaMask mobile production feature flags from the client-config API.
+A Next.js dashboard for viewing MetaMask feature flags from the client-config API across clients and environments.
 
 ## Features
 
-- Fetches flags from `https://client-config.api.cx.metamask.io/v1/flags?client=mobile&distribution=main&environment=prod`
-- Groups flags into **Threshold** (array values) and **Config** (everything else)
+- Fetches flags from `https://client-config.api.cx.metamask.io/v1/flags`
+- Compares **mobile** and **extension** across **dev**, **prod**, and **test** (distribution: `main`)
+- Groups flags by name with types: **boolean**, **threshold** (array), **config** (object), **other**
 - Detects **fully rolled out** threshold flags where every array entry has `scope.value === 1`
-- Persists first-seen rollout timestamps in browser `localStorage` under the `fullyRolledOut` key
+- Persists first-seen rollout timestamps in **Postgres** (Vercel Postgres)
 - Highlights how long each flag has been fully rolled out
 - Flags threshold rollouts older than **180 days** for cleanup review
 
@@ -15,10 +16,31 @@ A Next.js dashboard for viewing MetaMask mobile production feature flags from th
 
 ```bash
 npm install
+cp .env.example .env.local
 npm run dev
 ```
 
 Open [http://localhost:3000](http://localhost:3000).
+
+## Database setup
+
+Fully rolled out flag timestamps are stored in Postgres via `@vercel/postgres`, not the browser.
+
+1. Create a Postgres database (e.g. [Vercel Postgres / Neon](https://vercel.com/marketplace/category/storage))
+2. Set `POSTGRES_URL` in `.env.local` for local dev and in Vercel project environment variables for production
+3. The schema is created automatically on first request, or run manually:
+
+```bash
+psql "$POSTGRES_URL" -f db/schema.sql
+```
+
+Table: `fully_rolled_out_flags`
+
+| Column | Description |
+|--------|-------------|
+| `context_key` | e.g. `mobile/prod` |
+| `flag_name` | Feature flag name |
+| `recorded_at` | First time the flag was observed fully rolled out |
 
 ## Scripts
 
@@ -27,14 +49,18 @@ Open [http://localhost:3000](http://localhost:3000).
 - `npm run start` — run the production server
 - `npm run lint` — run ESLint
 
-## Local storage
+## Deploy on Vercel
 
-When a threshold flag becomes fully rolled out, the dashboard records the first observed timestamp:
-
-```json
-{
-  "homeTMCU926AbtestDiscoveryPills": "2026-06-29T16:00:00.000Z"
-}
+```bash
+npx vercel login
+npx vercel link --yes --project mobile-feature-flags-dashboard
+npx vercel deploy --prod --yes
 ```
 
-Timestamps are preserved across refreshes so rollout duration can be tracked over time.
+Add a Postgres storage integration (Neon via Vercel Marketplace) to the project and set `POSTGRES_URL` for rollout tracking in production.
+
+For local development after connecting Neon on Vercel:
+
+```bash
+npx vercel env pull .env.local
+```

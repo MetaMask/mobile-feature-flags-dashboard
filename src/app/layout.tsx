@@ -13,9 +13,9 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: 'MetaMask Mobile Feature Flags Dashboard',
+  title: 'MetaMask Feature Flags Dashboard',
   description:
-    'Dashboard for MetaMask mobile production feature flags with rollout tracking.',
+    'Dashboard for MetaMask feature flags across clients and environments with rollout tracking.',
 };
 
 export default function RootLayout({
