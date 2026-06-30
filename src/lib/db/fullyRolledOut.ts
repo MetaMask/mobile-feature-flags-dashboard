@@ -1,4 +1,4 @@
-import { neon } from '@neondatabase/serverless';
+import { sql } from '@vercel/postgres';
 
 import { buildFullyRolledOutKey } from '@/lib/flags';
 import type { FullyRolledOutStorage } from '@/lib/types';
@@ -6,20 +6,10 @@ import type { FullyRolledOutStorage } from '@/lib/types';
 type FullyRolledOutRow = {
   context_key: string;
   flag_name: string;
-  recorded_at: string;
+  recorded_at: Date | string;
 };
 
 let schemaReady: Promise<void> | null = null;
-
-function getSql() {
-  const connectionString = process.env.POSTGRES_URL;
-
-  if (!connectionString) {
-    return null;
-  }
-
-  return neon(connectionString);
-}
 
 export function isDatabaseConfigured(): boolean {
   return Boolean(process.env.POSTGRES_URL);
@@ -41,9 +31,7 @@ export function parseFullyRolledOutKey(
 }
 
 export async function ensureFullyRolledOutSchema(): Promise<void> {
-  const sql = getSql();
-
-  if (!sql) {
+  if (!isDatabaseConfigured()) {
     return;
   }
 
@@ -62,22 +50,25 @@ export async function ensureFullyRolledOutSchema(): Promise<void> {
 }
 
 export async function getFullyRolledOutTimestamps(): Promise<FullyRolledOutStorage> {
-  const sql = getSql();
-
-  if (!sql) {
+  if (!isDatabaseConfigured()) {
     return {};
   }
 
   await ensureFullyRolledOutSchema();
 
-  const rows = (await sql`
+  const { rows } = await sql<FullyRolledOutRow>`
     SELECT context_key, flag_name, recorded_at
     FROM fully_rolled_out_flags
-  `) as FullyRolledOutRow[];
+  `;
 
   return rows.reduce<FullyRolledOutStorage>((accumulator, row) => {
+    const recordedAt =
+      row.recorded_at instanceof Date
+        ? row.recorded_at.toISOString()
+        : new Date(row.recorded_at).toISOString();
+
     accumulator[buildFullyRolledOutKey(row.context_key, row.flag_name)] =
-      new Date(row.recorded_at).toISOString();
+      recordedAt;
 
     return accumulator;
   }, {});
@@ -87,9 +78,7 @@ export async function recordNewFullyRolledOutFlags(
   keys: string[],
   recordedAt = new Date().toISOString(),
 ): Promise<void> {
-  const sql = getSql();
-
-  if (!sql || keys.length === 0) {
+  if (!isDatabaseConfigured() || keys.length === 0) {
     return;
   }
 

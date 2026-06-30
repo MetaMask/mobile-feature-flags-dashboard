@@ -24,7 +24,7 @@ Open [http://localhost:3000](http://localhost:3000).
 
 ## Database setup
 
-Fully rolled out flag timestamps are stored in Postgres, not the browser.
+Fully rolled out flag timestamps are stored in Postgres via `@vercel/postgres`, not the browser.
 
 1. Create a Postgres database (e.g. [Vercel Postgres / Neon](https://vercel.com/marketplace/category/storage))
 2. Set `POSTGRES_URL` in `.env.local` for local dev and in Vercel project environment variables for production
