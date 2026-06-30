@@ -27,7 +27,6 @@ export const DEFAULT_FLAGS_PARAMS = {
   environment: 'prod',
 } as const;
 
-export const FULLY_ROLLED_OUT_STORAGE_KEY = 'fullyRolledOut';
 export const FULLY_ROLLED_OUT_DAYS_THRESHOLD = 180;
 
 export function buildFlagsUrl(
@@ -58,7 +57,7 @@ export function parseContextKey(contextKey: ContextKey): FlagContext {
 }
 
 export function buildFullyRolledOutKey(
-  contextKey: ContextKey,
+  contextKey: string,
   flagName: string,
 ): string {
   return `${contextKey}/${flagName}`;
@@ -315,22 +314,6 @@ export function groupFlags(
       };
     })
     .sort((left, right) => left.name.localeCompare(right.name));
-}
-
-export function mergeFullyRolledOutTimestamps(
-  existing: FullyRolledOutStorage,
-  fullyRolledOutKeys: string[],
-  recordedAt = new Date().toISOString(),
-): FullyRolledOutStorage {
-  const next: FullyRolledOutStorage = { ...existing };
-
-  for (const key of fullyRolledOutKeys) {
-    if (!next[key]) {
-      next[key] = recordedAt;
-    }
-  }
-
-  return next;
 }
 
 export function collectFullyRolledOutKeys(

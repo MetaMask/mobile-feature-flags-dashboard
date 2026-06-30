@@ -14,6 +14,7 @@ import type {
 type DashboardProps = {
   flags: FlagByName[];
   fetchedAt: string | null;
+  rolloutTrackingEnabled: boolean;
   selectedClients: FlagClient[];
   selectedEnvironments: FlagEnvironment[];
   onClientsChange: (clients: FlagClient[]) => void;
@@ -233,6 +234,7 @@ function FilterGroup<T extends string>({
 export function Dashboard({
   flags,
   fetchedAt,
+  rolloutTrackingEnabled,
   selectedClients,
   selectedEnvironments,
   onClientsChange,
@@ -362,6 +364,15 @@ export function Dashboard({
             </p>
           </div>
         </div>
+
+        {!rolloutTrackingEnabled ? (
+          <p className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+            Rollout tracking is disabled. Set{' '}
+            <code className="rounded bg-amber-100 px-1 py-0.5">POSTGRES_URL</code>{' '}
+            (Vercel Postgres) to persist fully rolled out timestamps in the
+            database.
+          </p>
+        ) : null}
 
         <div className="space-y-4 rounded-xl border border-slate-200 bg-white p-4">
           <div className="grid gap-6 lg:grid-cols-2">

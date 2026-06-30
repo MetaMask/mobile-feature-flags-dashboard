@@ -1,7 +1,13 @@
 import { NextResponse } from 'next/server';
 
 import {
+  getFullyRolledOutTimestamps,
+  isDatabaseConfigured,
+  recordNewFullyRolledOutFlags,
+} from '@/lib/db/fullyRolledOut';
+import {
   buildFlagsUrl,
+  collectFullyRolledOutKeys,
   FLAG_CLIENTS,
   FLAG_DISTRIBUTION,
   FLAG_ENVIRONMENTS,
@@ -90,6 +96,24 @@ async function fetchContextFlags(
   }
 }
 
+async function buildFlagsResponse(results: ContextFlagsResult[]) {
+  const fullyRolledOutKeys = collectFullyRolledOutKeys(results);
+
+  if (isDatabaseConfigured()) {
+    await recordNewFullyRolledOutFlags(fullyRolledOutKeys);
+  }
+
+  const fullyRolledOut = await getFullyRolledOutTimestamps();
+
+  return {
+    contexts: results,
+    fetchedAt: new Date().toISOString(),
+    distribution: FLAG_DISTRIBUTION,
+    fullyRolledOut,
+    rolloutTrackingEnabled: isDatabaseConfigured(),
+  };
+}
+
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
@@ -114,19 +138,13 @@ export async function GET(request: Request) {
       return NextResponse.json(
         {
           error: failedContexts[0]?.error ?? 'Failed to fetch feature flags',
-          contexts: results,
-          fetchedAt: new Date().toISOString(),
-          distribution: FLAG_DISTRIBUTION,
+          ...(await buildFlagsResponse(results)),
         },
         { status: 502 },
       );
     }
 
-    return NextResponse.json({
-      contexts: results,
-      fetchedAt: new Date().toISOString(),
-      distribution: FLAG_DISTRIBUTION,
-    });
+    return NextResponse.json(await buildFlagsResponse(results));
   } catch (error) {
     const message =
       error instanceof Error ? error.message : 'Unknown error fetching flags';

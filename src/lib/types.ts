@@ -83,5 +83,7 @@ export type FlagsMatrixResponse = {
   contexts: ContextFlagsResult[];
   fetchedAt: string;
   distribution: FlagDistribution;
+  fullyRolledOut: FullyRolledOutStorage;
+  rolloutTrackingEnabled: boolean;
   error?: string;
 };

@@ -4,16 +4,10 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { Dashboard } from '@/components/Dashboard';
 import {
-  collectFullyRolledOutKeys,
   FLAG_CLIENTS,
   FLAG_ENVIRONMENTS,
   groupFlagsByName,
-  mergeFullyRolledOutTimestamps,
 } from '@/lib/flags';
-import {
-  readFullyRolledOutStorage,
-  writeFullyRolledOutStorage,
-} from '@/lib/fullyRolledOutStorage';
 import type {
   FlagByName,
   FlagClient,
@@ -36,6 +30,7 @@ function buildFlagsApiUrl(
 export function FeatureFlagsDashboard() {
   const [flags, setFlags] = useState<FlagByName[]>([]);
   const [fetchedAt, setFetchedAt] = useState<string | null>(null);
+  const [rolloutTrackingEnabled, setRolloutTrackingEnabled] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -64,16 +59,9 @@ export function FeatureFlagsDashboard() {
           throw new Error(payload.error ?? 'Failed to load feature flags');
         }
 
-        const existingStorage = readFullyRolledOutStorage();
-        const fullyRolledOutKeys = collectFullyRolledOutKeys(payload.contexts);
-        const updatedStorage = mergeFullyRolledOutTimestamps(
-          existingStorage,
-          fullyRolledOutKeys,
-        );
-        writeFullyRolledOutStorage(updatedStorage);
-
-        setFlags(groupFlagsByName(payload.contexts, updatedStorage));
+        setFlags(groupFlagsByName(payload.contexts, payload.fullyRolledOut));
         setFetchedAt(payload.fetchedAt);
+        setRolloutTrackingEnabled(payload.rolloutTrackingEnabled);
       } catch (loadError) {
         const message =
           loadError instanceof Error
@@ -133,6 +121,7 @@ export function FeatureFlagsDashboard() {
       <Dashboard
         flags={flags}
         fetchedAt={fetchedAt}
+        rolloutTrackingEnabled={rolloutTrackingEnabled}
         selectedClients={selectedClients}
         selectedEnvironments={selectedEnvironments}
         onClientsChange={setSelectedClients}
