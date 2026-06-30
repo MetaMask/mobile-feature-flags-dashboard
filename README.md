@@ -57,4 +57,10 @@ npx vercel link --yes --project mobile-feature-flags-dashboard
 npx vercel deploy --prod --yes
 ```
 
-Add a Postgres storage integration (Neon via Vercel Marketplace) to the project and set `POSTGRES_URL` before expecting rollout tracking to work in production.
+Add a Postgres storage integration (Neon via Vercel Marketplace) to the project and set `POSTGRES_URL` for rollout tracking in production.
+
+For local development after connecting Neon on Vercel:
+
+```bash
+npx vercel env pull .env.local
+```
